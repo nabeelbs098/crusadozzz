@@ -25,11 +25,12 @@ export default function Login() {
     }
 
     // 2. Fetch the user's role from your custom 'users' table
+    // 2. Fetch the user's role from your 'responders' table
     if (authData.user) {
       const { data: userData, error: userError } = await supabase
-        .from("users")
+        .from("responders") // 👈 CHANGE THIS
         .select("role")
-        .eq("id", authData.user.id)
+        .eq("user_id", authData.user.id) // 👈 CHANGE THIS to match the column name
         .single();
 
       if (userError) {
@@ -38,11 +39,11 @@ export default function Login() {
       } else if (userData) {
         // 3. Route to the correct dashboard based on role
         if (userData.role === "ambulance") {
-          navigate("/dashboard/ambulance");
+          navigate("/dashboard");
         } else if (userData.role === "police") {
-          navigate("/dashboard/police");
+          navigate("/dashboard");
         } else if (userData.role === "hospital") {
-          navigate("/dashboard/hospital");
+          navigate("/dashboard");
         } else {
           alert("Role not recognized!");
         }
