@@ -20,21 +20,26 @@ export default function Dashboard() {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null); 
   const [responderLoc, setResponderLoc] = useState<{lat: number, lng: number} | null>(null);
+  const [ambulanceLoc, setAmbulanceLoc] = useState<{lat: number, lng: number} | null>(null);
 
   useEffect(() => {
     checkUserAndFetchData();
   }, []);
 
-  // 1. HOSPITAL AUTO-REFRESH LOGIC
   useEffect(() => {
     if (role === 'hospital') {
       const interval = setInterval(() => {
         fetchAccidents();
-        console.log("Hospital Feed Auto-Refreshed");
-      }, 30000); // Auto-refresh every 30 seconds
+        accidents.forEach(acc => {
+          if (acc.assigned_to && acc.status === 'accepted') {
+            fetchAmbulanceLocation(acc.assigned_to);
+          }
+        });
+        console.log("Hospital Feed & Ambulance Locations Auto-Refreshed");
+      }, 30000); 
       return () => clearInterval(interval);
     }
-  }, [role]);
+  }, [role, accidents]);
 
   const checkUserAndFetchData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -59,20 +64,68 @@ export default function Dashboard() {
     fetchAccidents(); 
   };
 
+  // ✅ UPDATED: Clean fetchAccidents with "Nearest 4" logic for Ambulances
   const fetchAccidents = async () => {
-    // Only fetch cases that aren't already resolved
     const { data: reports } = await supabase
       .from("accident_reports")
       .select("*")
-      .neq("status", "resolved") 
-      .order("created_at", { ascending: false });
-      
-    if (reports) {
-      setAccidents(reports);
+      .neq("status", "resolved");
+
+    if (!reports) return;
+
+    // 🚑 If ambulance → filter nearest 4 only
+    if (role === "ambulance" && responderLoc) {
+      const sorted = reports
+        .map(acc => ({
+          ...acc,
+          distance: getDistance(
+            responderLoc.lat,
+            responderLoc.lng,
+            acc.latitude,
+            acc.longitude
+          )
+        }))
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 4); // 👈 Limit to the 4 most relevant cases
+
+      setAccidents(sorted);
+    } 
+    else {
+      // Hospital & Police → see all reports sorted by time
+      const sortedByTime = [...reports].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setAccidents(sortedByTime);
     }
   };
 
-  // 2. POLICE STATUS UPDATE LOGIC
+  const fetchAmbulanceLocation = async (assignedId: string) => {
+    const { data } = await supabase
+      .from("responders")
+      .select("latitude, longitude")
+      .eq("user_id", assignedId)
+      .single();
+
+    if (data?.latitude && data?.longitude) {
+      setAmbulanceLoc({
+        lat: data.latitude,
+        lng: data.longitude
+      });
+      return { lat: data.latitude, lng: data.longitude };
+    }
+    return null;
+  };
+
+  const openLiveTracking = async (assignedId: string) => {
+    const loc = await fetchAmbulanceLocation(assignedId);
+    if (!loc) {
+      alert("Live location not available yet. Ensure the ambulance has GPS enabled.");
+      return;
+    }
+    const mapsUrl = `https://www.google.com/maps?q=${loc.lat},${loc.lng}`;
+    window.open(mapsUrl, "_blank");
+  };
+
   const updateIncidentStatus = async (reportId: string, newStatus: string) => {
     const { error } = await supabase
       .from("accident_reports")
@@ -129,12 +182,7 @@ export default function Dashboard() {
         <p style={{ textAlign: "center", color: "#666", marginTop: "50px" }}>No active reports in your vicinity.</p>
       ) : (
         <div style={{ display: "grid", gap: "24px" }}>
-          {[...accidents].sort((a, b) => {
-            if (!responderLoc) return 0;
-            const distA = getDistance(responderLoc.lat, responderLoc.lng, a.latitude, a.longitude);
-            const distB = getDistance(responderLoc.lat, responderLoc.lng, b.latitude, b.longitude);
-            return distA - distB;
-          }).map((acc) => (
+          {accidents.map((acc) => (
             <div key={acc.id} style={{ background: "#1e1e1e", borderRadius: "16px", overflow: "hidden", border: "1px solid #333", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.5)" }}>
               
               <div style={{ padding: "12px 20px", background: "rgba(255,255,255,0.03)", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #333" }}>
@@ -169,9 +217,23 @@ export default function Dashboard() {
                     <div style={{ fontSize: "0.85em", color: "#e0e0e0" }}>
                        Status: {acc.status === "pending" ? "Awaiting dispatch" : "🚑 Ambulance en route"}
                     </div>
-                    {/* Placeholder for ambulance tracking */}
-                    <button style={{ marginTop: "10px", width: "100%", padding: "8px", background: "rgba(33, 150, 243, 0.2)", border: "1px solid #2196F3", color: "#fff", borderRadius: "4px", fontSize: "0.8rem", cursor: "pointer" }}>
-                        View Live Ambulance GPS
+                    
+                    <button 
+                      onClick={() => acc.assigned_to && openLiveTracking(acc.assigned_to)}
+                      disabled={!acc.assigned_to}
+                      style={{ 
+                        marginTop: "10px", 
+                        width: "100%", 
+                        padding: "8px", 
+                        background: acc.assigned_to ? "rgba(33, 150, 243, 0.2)" : "#333", 
+                        border: acc.assigned_to ? "1px solid #2196F3" : "1px solid #555", 
+                        color: acc.assigned_to ? "#fff" : "#888", 
+                        borderRadius: "4px", 
+                        fontSize: "0.8rem", 
+                        cursor: acc.assigned_to ? "pointer" : "not-allowed" 
+                      }}
+                    >
+                      {acc.assigned_to ? "View Live Ambulance GPS" : "No Ambulance Assigned Yet"}
                     </button>
                   </div>
                 )}
@@ -197,6 +259,38 @@ export default function Dashboard() {
                 {/* --- 5. AMBULANCE VIEW --- */}
                 {role === "ambulance" && (
                   <div style={{ marginTop: "10px" }}>
+                    {/* 🚑 Accident Location Display Card */}
+                    <div style={{
+                      padding: "12px",
+                      backgroundColor: "rgba(255,255,255,0.05)",
+                      borderRadius: "8px",
+                      marginBottom: "10px",
+                      border: "1px solid #333"
+                    }}>
+                      <strong style={{ fontSize: "0.8rem", color: "#bbb" }}>📍 Accident Location</strong>
+                      <div style={{ fontSize: "0.85rem", marginTop: "5px", color: "#fff" }}>
+                        Lat: {acc.latitude.toFixed(5)} <br/>
+                        Lng: {acc.longitude.toFixed(5)}
+                      </div>
+
+                      <button
+                        onClick={() => window.open(`https://www.google.com/maps?q=${acc.latitude},${acc.longitude}`, "_blank")}
+                        style={{
+                          marginTop: "8px",
+                          padding: "6px",
+                          width: "100%",
+                          background: "#333",
+                          border: "1px solid #555",
+                          color: "#fff",
+                          borderRadius: "4px",
+                          fontSize: "0.75rem",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Open in Google Maps
+                      </button>
+                    </div>
+
                     {acc.status === "pending" ? (
                       <button 
                         onClick={() => acceptAccident(acc.id)}
