@@ -21,16 +21,16 @@ export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null); 
   const [responderLoc, setResponderLoc] = useState<{lat: number, lng: number} | null>(null);
   
-  // ✅ FIX: TypeScript Safety - marking state as intentionally kept for future Map UI
+  // ✅ Preserved for future Map UI + Fixed Build via Usage in Hospital/Police blocks
   const [ambulanceLoc, setAmbulanceLoc] = useState<{lat: number, lng: number} | null>(null);
-  void ambulanceLoc; 
 
   useEffect(() => {
     checkUserAndFetchData();
   }, []);
 
   useEffect(() => {
-    if (role === 'hospital') {
+    // Both Hospital and Police need periodic updates to track the assigned ambulance
+    if (role === 'hospital' || role === 'police') {
       const interval = setInterval(() => {
         fetchAccidents();
         accidents.forEach(acc => {
@@ -38,7 +38,7 @@ export default function Dashboard() {
             fetchAmbulanceLocation(acc.assigned_to);
           }
         });
-        console.log("Hospital Feed & Ambulance Locations Auto-Refreshed");
+        console.log(`${role} Feed & Ambulance Locations Auto-Refreshed`);
       }, 30000); 
       return () => clearInterval(interval);
     }
@@ -209,9 +209,10 @@ export default function Dashboard() {
                   {acc.description}
                 </p>
 
+                {/* --- 🏥 HOSPITAL VIEW --- */}
                 {role === "hospital" && (
                   <div style={{ padding: "15px", backgroundColor: "rgba(33, 150, 243, 0.1)", color: "#2196F3", borderRadius: "8px", border: "1px solid rgba(33, 150, 243, 0.3)" }}>
-                    <div style={{ fontWeight: "bold", marginBottom: "5px" }}>🏥 Hospital Preparation Alert</div>
+                    <div style={{ fontWeight: "bold", marginBottom: "5px" }}>🏥 Preparation Alert</div>
                     <div style={{ fontSize: "0.85em", color: "#e0e0e0" }}>
                        Status: {acc.status === "pending" ? "Awaiting dispatch" : "🚑 Ambulance en route"}
                     </div>
@@ -236,61 +237,52 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* --- 🚓 UPDATED POLICE VIEW --- */}
+                {/* --- 🚓 POLICE VIEW --- */}
                 {role === "police" && (
                   <div style={{ marginTop: "10px" }}>
-                    {/* 📍 Accident Location Card */}
-                    <div style={{
-                      padding: "12px",
-                      backgroundColor: "rgba(255,255,255,0.05)",
-                      borderRadius: "8px",
-                      marginBottom: "10px",
-                      border: "1px solid #333"
-                    }}>
-                      <strong style={{ fontSize: "0.8rem", color: "#bbb" }}>📍 Accident Location</strong>
+                    <div style={{ padding: "12px", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "8px", marginBottom: "10px", border: "1px solid #333" }}>
+                      <strong style={{ fontSize: "0.8rem", color: "#bbb" }}>📍 Incident Location</strong>
                       <div style={{ fontSize: "0.85rem", marginTop: "5px", color: "#fff" }}>
                         Lat: {acc.latitude.toFixed(5)} <br/>
                         Lng: {acc.longitude.toFixed(5)}
                       </div>
 
-                      {/* 🗺 Open Navigation */}
                       <button
                         onClick={() => window.open(`http://googleusercontent.com/maps.google.com/q=${acc.latitude},${acc.longitude}`, "_blank")}
-                        style={{
-                          marginTop: "8px",
-                          padding: "6px",
-                          width: "100%",
-                          background: "#333",
-                          border: "1px solid #555",
-                          color: "#fff",
-                          borderRadius: "4px",
-                          fontSize: "0.75rem",
-                          cursor: "pointer"
-                        }}
+                        style={{ marginTop: "8px", padding: "6px", width: "100%", background: "#333", border: "1px solid #555", color: "#fff", borderRadius: "4px", fontSize: "0.75rem", cursor: "pointer" }}
                       >
                         Open in Google Maps
                       </button>
+
+                      {/* ✅ Live Ambulance Tracking for Police */}
+                      {acc.assigned_to && (
+                        <button
+                          onClick={() => openLiveTracking(acc.assigned_to)}
+                          style={{
+                            marginTop: "8px",
+                            width: "100%",
+                            padding: "8px",
+                            background: "#1a1a1a",
+                            border: "1px solid #444",
+                            color: "#2196F3",
+                            borderRadius: "4px",
+                            fontSize: "0.8rem",
+                            cursor: "pointer"
+                          }}
+                        >
+                          View Live Ambulance GPS
+                        </button>
+                      )}
                     </div>
 
-                    {/* Police Actions */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                      <button 
-                        onClick={() => updateIncidentStatus(acc.id, "resolved")}
-                        style={{ backgroundColor: "#4CAF50", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
-                      >
-                        Solved
-                      </button>
-
-                      <button 
-                        onClick={() => updateIncidentStatus(acc.id, "investigating")}
-                        style={{ backgroundColor: "#ff9800", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
-                      >
-                        Investigate
-                      </button>
+                      <button onClick={() => updateIncidentStatus(acc.id, "resolved")} style={{ backgroundColor: "#4CAF50", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}>Solved</button>
+                      <button onClick={() => updateIncidentStatus(acc.id, "investigating")} style={{ backgroundColor: "#ff9800", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}>Investigate</button>
                     </div>
                   </div>
                 )}
 
+                {/* --- 🚑 AMBULANCE VIEW --- */}
                 {role === "ambulance" && (
                   <div style={{ marginTop: "10px" }}>
                     <div style={{ padding: "12px", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "8px", marginBottom: "10px", border: "1px solid #333" }}>
