@@ -15,7 +15,7 @@ export default function Index() {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
 
-      const fileName = `${Date.now()}-${image.name}`;
+      const fileName = `public/${Date.now()}-${image.name}`;
 
       const { error: uploadError } =
         await supabase.storage
