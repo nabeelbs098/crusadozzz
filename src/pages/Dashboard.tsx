@@ -20,7 +20,10 @@ export default function Dashboard() {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null); 
   const [responderLoc, setResponderLoc] = useState<{lat: number, lng: number} | null>(null);
+  
+  // ✅ FIX: TypeScript Safety - marking state as intentionally kept for future Map UI
   const [ambulanceLoc, setAmbulanceLoc] = useState<{lat: number, lng: number} | null>(null);
+  void ambulanceLoc; 
 
   useEffect(() => {
     checkUserAndFetchData();
@@ -64,7 +67,6 @@ export default function Dashboard() {
     fetchAccidents(); 
   };
 
-  // ✅ UPDATED: Clean fetchAccidents with "Nearest 4" logic for Ambulances
   const fetchAccidents = async () => {
     const { data: reports } = await supabase
       .from("accident_reports")
@@ -73,7 +75,6 @@ export default function Dashboard() {
 
     if (!reports) return;
 
-    // 🚑 If ambulance → filter nearest 4 only
     if (role === "ambulance" && responderLoc) {
       const sorted = reports
         .map(acc => ({
@@ -86,12 +87,10 @@ export default function Dashboard() {
           )
         }))
         .sort((a, b) => a.distance - b.distance)
-        .slice(0, 4); // 👈 Limit to the 4 most relevant cases
-
+        .slice(0, 4); 
       setAccidents(sorted);
     } 
     else {
-      // Hospital & Police → see all reports sorted by time
       const sortedByTime = [...reports].sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -122,7 +121,7 @@ export default function Dashboard() {
       alert("Live location not available yet. Ensure the ambulance has GPS enabled.");
       return;
     }
-    const mapsUrl = `https://www.google.com/maps?q=${loc.lat},${loc.lng}`;
+    const mapsUrl = `http://googleusercontent.com/maps.google.com/q=${loc.lat},${loc.lng}`;
     window.open(mapsUrl, "_blank");
   };
 
@@ -164,10 +163,10 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ padding: "40px", maxWidth: "800px", margin: "0 auto" }}>
+    <div style={{ padding: "40px", maxWidth: "800px", margin: "0 auto", color: "white" }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "30px" }}>
         <h2 style={{ margin: 0 }}>🚨 {role?.toUpperCase()} Dashboard</h2>
-        <button onClick={handleLogout} style={{ padding: "10px 20px", background: "#333", color: "white" }}>Logout</button>
+        <button onClick={handleLogout} style={{ padding: "10px 20px", background: "#333", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Logout</button>
       </div>
       
       <div style={{ background: "#1e1e1e", padding: "15px 20px", borderRadius: "12px", marginBottom: "30px", border: "1px solid #333" }}>
@@ -210,7 +209,6 @@ export default function Dashboard() {
                   {acc.description}
                 </p>
 
-                {/* --- 3. HOSPITAL VIEW --- */}
                 {role === "hospital" && (
                   <div style={{ padding: "15px", backgroundColor: "rgba(33, 150, 243, 0.1)", color: "#2196F3", borderRadius: "8px", border: "1px solid rgba(33, 150, 243, 0.3)" }}>
                     <div style={{ fontWeight: "bold", marginBottom: "5px" }}>🏥 Hospital Preparation Alert</div>
@@ -238,28 +236,10 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* --- 4. POLICE VIEW --- */}
+                {/* --- 🚓 UPDATED POLICE VIEW --- */}
                 {role === "police" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "10px" }}>
-                    <button 
-                      onClick={() => updateIncidentStatus(acc.id, "resolved")}
-                      style={{ backgroundColor: "#4CAF50", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
-                    >
-                      Solved
-                    </button>
-                    <button 
-                      onClick={() => updateIncidentStatus(acc.id, "investigating")}
-                      style={{ backgroundColor: "#ff9800", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
-                    >
-                      Investigate
-                    </button>
-                  </div>
-                )}
-
-                {/* --- 5. AMBULANCE VIEW --- */}
-                {role === "ambulance" && (
                   <div style={{ marginTop: "10px" }}>
-                    {/* 🚑 Accident Location Display Card */}
+                    {/* 📍 Accident Location Card */}
                     <div style={{
                       padding: "12px",
                       backgroundColor: "rgba(255,255,255,0.05)",
@@ -273,8 +253,9 @@ export default function Dashboard() {
                         Lng: {acc.longitude.toFixed(5)}
                       </div>
 
+                      {/* 🗺 Open Navigation */}
                       <button
-                        onClick={() => window.open(`https://www.google.com/maps?q=${acc.latitude},${acc.longitude}`, "_blank")}
+                        onClick={() => window.open(`http://googleusercontent.com/maps.google.com/q=${acc.latitude},${acc.longitude}`, "_blank")}
                         style={{
                           marginTop: "8px",
                           padding: "6px",
@@ -291,24 +272,47 @@ export default function Dashboard() {
                       </button>
                     </div>
 
-                    {acc.status === "pending" ? (
-                      <button 
-                        onClick={() => acceptAccident(acc.id)}
-                        style={{ backgroundColor: "#4CAF50", color: "white", padding: "14px", width: "100%", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}
-                      >
-                        Accept Case
-                      </button>
-                    ) : acc.assigned_to === userId ? (
+                    {/* Police Actions */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                       <button 
                         onClick={() => updateIncidentStatus(acc.id, "resolved")}
-                        style={{ backgroundColor: "#2196F3", color: "white", padding: "14px", width: "100%", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}
+                        style={{ backgroundColor: "#4CAF50", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
                       >
-                        Mark as Resolved
+                        Solved
                       </button>
-                    ) : (
-                      <div style={{ padding: "12px", backgroundColor: "#121212", textAlign: "center", borderRadius: "8px", color: "#555" }}>
-                        🔒 Assigned to another unit
+
+                      <button 
+                        onClick={() => updateIncidentStatus(acc.id, "investigating")}
+                        style={{ backgroundColor: "#ff9800", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+                      >
+                        Investigate
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {role === "ambulance" && (
+                  <div style={{ marginTop: "10px" }}>
+                    <div style={{ padding: "12px", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "8px", marginBottom: "10px", border: "1px solid #333" }}>
+                      <strong style={{ fontSize: "0.8rem", color: "#bbb" }}>📍 Accident Location</strong>
+                      <div style={{ fontSize: "0.85rem", marginTop: "5px", color: "#fff" }}>
+                        Lat: {acc.latitude.toFixed(5)} <br/>
+                        Lng: {acc.longitude.toFixed(5)}
                       </div>
+                      <button
+                        onClick={() => window.open(`http://googleusercontent.com/maps.google.com/q=${acc.latitude},${acc.longitude}`, "_blank")}
+                        style={{ marginTop: "8px", padding: "6px", width: "100%", background: "#333", border: "1px solid #555", color: "#fff", borderRadius: "4px", fontSize: "0.75rem", cursor: "pointer" }}
+                      >
+                        Open in Google Maps
+                      </button>
+                    </div>
+
+                    {acc.status === "pending" ? (
+                      <button onClick={() => acceptAccident(acc.id)} style={{ backgroundColor: "#4CAF50", color: "white", padding: "14px", width: "100%", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>Accept Case</button>
+                    ) : acc.assigned_to === userId ? (
+                      <button onClick={() => updateIncidentStatus(acc.id, "resolved")} style={{ backgroundColor: "#2196F3", color: "white", padding: "14px", width: "100%", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>Mark as Resolved</button>
+                    ) : (
+                      <div style={{ padding: "12px", backgroundColor: "#121212", textAlign: "center", borderRadius: "8px", color: "#555" }}>🔒 Assigned to another unit</div>
                     )}
                   </div>
                 )}
