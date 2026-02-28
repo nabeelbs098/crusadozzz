@@ -4,15 +4,14 @@ import { useNavigate } from "react-router-dom";
 
 // Helper function to calculate distance in kilometers (Haversine formula)
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Radius of the earth in km
+  const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = 
     Math.sin(dLat/2) * Math.sin(dLat/2) +
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-  const distance = R * c; 
-  return distance;
+  return R * c; 
 }
 
 export default function Dashboard() {
@@ -20,41 +19,48 @@ export default function Dashboard() {
   const [accidents, setAccidents] = useState<any[]>([]);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null); 
-  const [responderLoc, setResponderLoc] = useState<{lat: number, lng: number} | null>(null); // NEW: Tracks responder's GPS
+  const [responderLoc, setResponderLoc] = useState<{lat: number, lng: number} | null>(null);
 
   useEffect(() => {
     checkUserAndFetchData();
   }, []);
 
+  // 1. HOSPITAL AUTO-REFRESH LOGIC
+  useEffect(() => {
+    if (role === 'hospital') {
+      const interval = setInterval(() => {
+        fetchAccidents();
+        console.log("Hospital Feed Auto-Refreshed");
+      }, 30000); // Auto-refresh every 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [role]);
+
   const checkUserAndFetchData = async () => {
-    // 1. Check if user is logged in
     const { data: { user } } = await supabase.auth.getUser();
-    
     if (!user) {
       navigate("/login");
       return;
     }
-    
     setUserId(user.id);
 
-    // 2. Fetch their role AND location from the 'responders' table
     const { data: userData } = await supabase
       .from("responders") 
-      .select("role, latitude, longitude") // 👈 NEW: Grab coordinates
+      .select("role, latitude, longitude")
       .eq("user_id", user.id) 
       .single();
       
     if (userData) {
       setRole(userData.role);
       if (userData.latitude && userData.longitude) {
-        setResponderLoc({ lat: userData.latitude, lng: userData.longitude }); // 👈 NEW: Save coordinates
+        setResponderLoc({ lat: userData.latitude, lng: userData.longitude });
       }
     }
-
     fetchAccidents(); 
   };
 
   const fetchAccidents = async () => {
+    // Only fetch cases that aren't already resolved
     const { data: reports } = await supabase
       .from("accident_reports")
       .select("*")
@@ -66,15 +72,27 @@ export default function Dashboard() {
     }
   };
 
-  const acceptAccident = async (reportId: string) => {
-    if (!userId) return;
-
+  // 2. POLICE STATUS UPDATE LOGIC
+  const updateIncidentStatus = async (reportId: string, newStatus: string) => {
     const { error } = await supabase
       .from("accident_reports")
-      .update({ 
-        status: "accepted", 
-        assigned_to: userId 
-      })
+      .update({ status: newStatus })
+      .eq("id", reportId);
+
+    if (error) {
+      console.error(error);
+      alert(`Failed to mark as ${newStatus}`);
+    } else {
+      alert(`Status updated to ${newStatus.toUpperCase()}`);
+      fetchAccidents();
+    }
+  };
+
+  const acceptAccident = async (reportId: string) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("accident_reports")
+      .update({ status: "accepted", assigned_to: userId })
       .eq("id", reportId)
       .eq("status", "pending"); 
 
@@ -87,26 +105,6 @@ export default function Dashboard() {
     }
   };
 
-  const resolveAccident = async (reportId: string) => {
-    const isSure = window.confirm("Are you sure you want to mark this emergency as resolved?");
-    if (!isSure) return;
-
-    const { error } = await supabase
-      .from("accident_reports")
-      .update({ 
-        status: "resolved" 
-      })
-      .eq("id", reportId);
-
-    if (error) {
-      console.error(error);
-      alert("Failed to resolve case.");
-    } else {
-      alert("Case resolved successfully! Great job. 👏");
-      fetchAccidents(); 
-    }
-  };
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/");
@@ -114,84 +112,113 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: "40px", maxWidth: "800px", margin: "0 auto" }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>🚨 Responder Dashboard</h2>
-        <button onClick={handleLogout} style={{ padding: "8px 16px" }}>Logout</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "30px" }}>
+        <h2 style={{ margin: 0 }}>🚨 {role?.toUpperCase()} Dashboard</h2>
+        <button onClick={handleLogout} style={{ padding: "10px 20px", background: "#333", color: "white" }}>Logout</button>
       </div>
       
-      <p>Logged in as: <strong style={{ textTransform: "uppercase", color: "#4CAF50" }}>{role || "Loading..."}</strong></p>
-      <hr />
-      
-      <h3>Live Accident Feed</h3>
+      <div style={{ background: "#1e1e1e", padding: "15px 20px", borderRadius: "12px", marginBottom: "30px", border: "1px solid #333" }}>
+        System Status: <strong style={{ textTransform: "uppercase", color: "#4CAF50" }}>Online</strong>
+      </div>
+
+      <h3 style={{ marginBottom: "20px", display: "flex", alignItems: "center", gap: "10px" }}>
+        Live Emergency Feed <span style={{ fontSize: "0.6em", background: "#ff4d4d", padding: "2px 8px", borderRadius: "20px" }}>LIVE</span>
+      </h3>
       
       {accidents.length === 0 ? (
-        <p>No active emergencies currently.</p>
+        <p style={{ textAlign: "center", color: "#666", marginTop: "50px" }}>No active reports in your vicinity.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          {accidents.map((acc) => (
-            <div key={acc.id} style={{ border: "1px solid #444", padding: "20px", borderRadius: "10px", backgroundColor: "#222" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                <span style={{ fontWeight: "bold", color: acc.status === 'pending' ? '#ff9800' : '#4caf50' }}>
-                  Status: {acc.status.toUpperCase()}
+        <div style={{ display: "grid", gap: "24px" }}>
+          {[...accidents].sort((a, b) => {
+            if (!responderLoc) return 0;
+            const distA = getDistance(responderLoc.lat, responderLoc.lng, a.latitude, a.longitude);
+            const distB = getDistance(responderLoc.lat, responderLoc.lng, b.latitude, b.longitude);
+            return distA - distB;
+          }).map((acc) => (
+            <div key={acc.id} style={{ background: "#1e1e1e", borderRadius: "16px", overflow: "hidden", border: "1px solid #333", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.5)" }}>
+              
+              <div style={{ padding: "12px 20px", background: "rgba(255,255,255,0.03)", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #333" }}>
+                <span style={{ fontWeight: "800", fontSize: "0.9rem", color: acc.status === 'pending' ? '#ff9800' : '#4caf50' }}>
+                  ● {acc.status.toUpperCase()}
                 </span>
-                
-                {/* NEW: Displaying the distance instead of just raw coordinates! */}
-                <span style={{ fontSize: "0.9em", color: "#888" }}>
+                <span style={{ fontSize: "0.9rem", color: "#bbb", fontWeight: "600" }}>
                   {responderLoc ? (
-                    <strong style={{ color: "#fff" }}>
-                      📍 {getDistance(responderLoc.lat, responderLoc.lng, acc.latitude, acc.longitude).toFixed(1)} km away
-                    </strong>
+                    `📍 ${getDistance(responderLoc.lat, responderLoc.lng, acc.latitude, acc.longitude).toFixed(1)} km away`
                   ) : (
-                    `Lat: ${acc.latitude.toFixed(4)}, Lng: ${acc.longitude.toFixed(4)}`
+                    `Lat: ${acc.latitude.toFixed(2)}, Lng: ${acc.longitude.toFixed(2)}`
                   )}
                 </span>
-
               </div>
               
-              <p><strong>Description:</strong> {acc.description}</p>
-              
-              {acc.image_url && (
-                <img 
-                  src={acc.image_url} 
-                  alt="Accident scene" 
-                  style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", marginTop: "10px", marginBottom: "15px" }} 
-                />
-              )}
+              <div style={{ padding: "20px" }}>
+                {acc.image_url && (
+                  <div style={{ width: "100%", height: "250px", borderRadius: "10px", overflow: "hidden", marginBottom: "15px" }}>
+                    <img src={acc.image_url} alt="Accident" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                )}
 
-              {/* ROLE-BASED UI LOGIC */}
-              {role === "hospital" && (
-                <div style={{ padding: "15px", backgroundColor: "#e3f2fd", color: "#0d47a1", textAlign: "center", borderRadius: "5px", fontWeight: "bold" }}>
-                  🏥 Prepare Emergency Room
-                  <br />
-                  <span style={{ fontSize: "0.8em", fontWeight: "normal" }}>
-                    {acc.status === "pending" ? "Waiting for responder dispatch..." : "🚑 Responder is en route with patient"}
-                  </span>
-                </div>
-              )}
+                <p style={{ margin: "0 0 20px 0", lineHeight: "1.5" }}>
+                  <strong style={{ color: "#888", display: "block", fontSize: "0.75rem", textTransform: "uppercase" }}>Incident Details</strong>
+                  {acc.description}
+                </p>
 
-              {(role === "police" || role === "ambulance") && (
-                <>
-                  {acc.status === "pending" ? (
-                    <button 
-                      onClick={() => acceptAccident(acc.id)}
-                      style={{ backgroundColor: "#4CAF50", color: "white", padding: "10px 20px", width: "100%", fontWeight: "bold", cursor: "pointer", border: "none", borderRadius: "5px" }}
-                    >
-                      Accept Case
-                    </button>
-                  ) : acc.assigned_to === userId ? (
-                    <button 
-                      style={{ backgroundColor: "#2196F3", color: "white", padding: "10px 20px", width: "100%", fontWeight: "bold", cursor: "pointer", border: "none", borderRadius: "5px" }}
-                      onClick={() => resolveAccident(acc.id)} 
-                    >
-                      Mark as Resolved
-                    </button>
-                  ) : (
-                    <div style={{ padding: "10px", backgroundColor: "#333", textAlign: "center", borderRadius: "5px", color: "#aaa" }}>
-                      🔒 Accepted by another responder
+                {/* --- 3. HOSPITAL VIEW --- */}
+                {role === "hospital" && (
+                  <div style={{ padding: "15px", backgroundColor: "rgba(33, 150, 243, 0.1)", color: "#2196F3", borderRadius: "8px", border: "1px solid rgba(33, 150, 243, 0.3)" }}>
+                    <div style={{ fontWeight: "bold", marginBottom: "5px" }}>🏥 Hospital Preparation Alert</div>
+                    <div style={{ fontSize: "0.85em", color: "#e0e0e0" }}>
+                       Status: {acc.status === "pending" ? "Awaiting dispatch" : "🚑 Ambulance en route"}
                     </div>
-                  )}
-                </>
-              )}
+                    {/* Placeholder for ambulance tracking */}
+                    <button style={{ marginTop: "10px", width: "100%", padding: "8px", background: "rgba(33, 150, 243, 0.2)", border: "1px solid #2196F3", color: "#fff", borderRadius: "4px", fontSize: "0.8rem", cursor: "pointer" }}>
+                        View Live Ambulance GPS
+                    </button>
+                  </div>
+                )}
+
+                {/* --- 4. POLICE VIEW --- */}
+                {role === "police" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "10px" }}>
+                    <button 
+                      onClick={() => updateIncidentStatus(acc.id, "resolved")}
+                      style={{ backgroundColor: "#4CAF50", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+                    >
+                      Solved
+                    </button>
+                    <button 
+                      onClick={() => updateIncidentStatus(acc.id, "investigating")}
+                      style={{ backgroundColor: "#ff9800", color: "white", padding: "12px", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+                    >
+                      Investigate
+                    </button>
+                  </div>
+                )}
+
+                {/* --- 5. AMBULANCE VIEW --- */}
+                {role === "ambulance" && (
+                  <div style={{ marginTop: "10px" }}>
+                    {acc.status === "pending" ? (
+                      <button 
+                        onClick={() => acceptAccident(acc.id)}
+                        style={{ backgroundColor: "#4CAF50", color: "white", padding: "14px", width: "100%", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}
+                      >
+                        Accept Case
+                      </button>
+                    ) : acc.assigned_to === userId ? (
+                      <button 
+                        onClick={() => updateIncidentStatus(acc.id, "resolved")}
+                        style={{ backgroundColor: "#2196F3", color: "white", padding: "14px", width: "100%", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}
+                      >
+                        Mark as Resolved
+                      </button>
+                    ) : (
+                      <div style={{ padding: "12px", backgroundColor: "#121212", textAlign: "center", borderRadius: "8px", color: "#555" }}>
+                        🔒 Assigned to another unit
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>

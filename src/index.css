@@ -13,6 +13,26 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  background-color: #0a0a0a; /* Match the professional dark theme */
+  color: white;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: initial; /* Fixes the Vite "center everything" bug */
+  min-width: 100%;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+}
 a {
   font-weight: 500;
   color: #646cff;
