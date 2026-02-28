@@ -70,7 +70,7 @@ export default function Index() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white tracking-wide">
-                REAQ NOW
+                ResQnow
               </h2>
               <p className="text-xs text-gray-400">
                 Emergency Response Network
